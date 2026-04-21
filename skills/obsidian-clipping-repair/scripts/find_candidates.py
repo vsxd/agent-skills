@@ -10,6 +10,18 @@ URL_RE = re.compile(r"https?://[^\s)\]>]+")
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
 FIELD_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.+?)\s*$")
 MD_LINK_LINE_RE = re.compile(r"^\s*\[[^\]]+\]\((https?://[^)]+)\)\s*$")
+HEADING_RE = re.compile(r"^#{1,6}\s+")
+TRUNCATED_END_RE = re.compile(r"(?:\.\.\.|…|[（(「『\"“‘][^）)」』\"”’]{0,80})$")
+CLIPPER_MARKERS = (
+    (re.compile(r"\bread original\b", re.IGNORECASE), "read-original marker"),
+    (re.compile(r"\bread on\b", re.IGNORECASE), "read-on marker"),
+    (re.compile(r"\bomnivore\b|omnivore\.app", re.IGNORECASE), "omnivore marker"),
+    (re.compile(r"^##\s+highlights\b|\bhighlights\b", re.IGNORECASE | re.MULTILINE), "highlights section"),
+    (re.compile(r"\binstapaper\b", re.IGNORECASE), "instapaper marker"),
+    (re.compile(r"\bpocket\b", re.IGNORECASE), "pocket marker"),
+    (re.compile(r"\braindrop(?:\.io)?\b", re.IGNORECASE), "raindrop marker"),
+    (re.compile(r"matter://|\bread on matter\b|\bmatter\.com\b", re.IGNORECASE), "matter marker"),
+)
 
 IGNORE_DIRS = {
     ".git",
@@ -51,6 +63,31 @@ def link_only_lines(lines: list[str]) -> int:
     return count
 
 
+def heading_lines(lines: list[str]) -> int:
+    return sum(1 for line in lines if HEADING_RE.match(line))
+
+
+def quote_lines(lines: list[str]) -> int:
+    return sum(1 for line in lines if line.startswith(">"))
+
+
+def clipper_markers(body: str) -> list[str]:
+    return [label for pattern, label in CLIPPER_MARKERS if pattern.search(body)]
+
+
+def looks_truncated(lines: list[str]) -> bool:
+    if not lines:
+        return False
+    last_line = lines[-1]
+    if TRUNCATED_END_RE.search(last_line):
+        return True
+    return len(last_line) >= 80 and last_line[-1] not in ".!?。！？:：)]）】\"”'’"
+
+
+def metadata_key_count(fields: dict[str, str]) -> int:
+    return len([key for key in fields if fields[key]])
+
+
 def excerpt(text: str, limit: int = 180) -> str:
     compact = " ".join(nonempty_lines(text))
     if len(compact) <= limit:
@@ -68,6 +105,11 @@ def score_note(path: Path, text: str) -> dict[str, object]:
     urls = URL_RE.findall(body)
     source_hints = [fields[key] for key in SOURCE_FIELDS if key in fields]
     healthy_metadata_count = sum(1 for key in HEALTHY_METADATA_FIELDS if key in fields)
+    metadata_count = metadata_key_count(fields)
+    headings = heading_lines(lines)
+    quotes = quote_lines(lines)
+    markers = clipper_markers(body)
+    truncated = looks_truncated(lines)
     score = 0
     reasons: list[str] = []
 
@@ -83,6 +125,10 @@ def score_note(path: Path, text: str) -> dict[str, object]:
     if urls:
         score += min(20, 8 + 4 * len(urls))
         reasons.append("contains source url")
+
+    if markers:
+        score += min(18, 8 + 4 * len(markers))
+        reasons.extend(markers)
 
     if len(lines) <= 6:
         score += 18
@@ -100,13 +146,32 @@ def score_note(path: Path, text: str) -> dict[str, object]:
         score += 20
         reasons.append("link-dominant body")
 
+    if quotes >= 3:
+        score += 8
+        reasons.append("quote-heavy highlight export")
+
+    if headings >= 1 and len(lines) <= 14:
+        score += 4
+        reasons.append("title-and-fragment structure")
+
+    if metadata_count <= 2 and "title" in fields:
+        score += 6
+        reasons.append("minimal clip metadata")
+
     if len(lines) <= 3 and urls and body.strip():
         score += 10
         reasons.append("title-plus-link shape")
 
-    if not source_hints and not urls:
-        score -= 26
-        reasons.append("no recoverable source hint")
+    if truncated:
+        score += 8
+        reasons.append("possibly truncated ending")
+
+    if not source_hints and not urls and not markers:
+        score -= 18
+        reasons.append("no explicit source hint")
+    elif not source_hints and not urls:
+        score -= 8
+        reasons.append("indirect source hints only")
 
     if len(body.strip()) >= 1200 and len(lines) >= 8:
         score -= 12
@@ -124,7 +189,8 @@ def score_note(path: Path, text: str) -> dict[str, object]:
         score -= 18
         reasons.append("body already substantial")
 
-    candidate = score >= 35
+    confidence = "high" if score >= 45 else "medium" if score >= 34 else "review" if score >= 26 else "low"
+    candidate = confidence in {"high", "medium"}
     title_guess = fields.get("title") or path.stem
     source_url = source_hints[0] if source_hints else (urls[0] if urls else "")
 
@@ -132,6 +198,7 @@ def score_note(path: Path, text: str) -> dict[str, object]:
         "path": str(path),
         "candidate": candidate,
         "score": score,
+        "confidence": confidence,
         "title_guess": title_guess,
         "source_url": source_url,
         "reasons": reasons,
@@ -198,7 +265,7 @@ def main() -> int:
 
     results.sort(key=lambda item: int(item["score"]), reverse=True)
     if not args.all:
-        results = [item for item in results if item["candidate"]]
+        results = [item for item in results if item["confidence"] != "low"]
     if args.top >= 0:
         results = results[: args.top]
 
@@ -212,7 +279,7 @@ def main() -> int:
 
     for item in results:
         reasons = ", ".join(item["reasons"])
-        print(f"[{item['score']:>3}] {item['path']}")
+        print(f"[{item['score']:>3} {item['confidence']:^6}] {item['path']}")
         print(f"      title: {item['title_guess']}")
         if item["source_url"]:
             print(f"      source: {item['source_url']}")

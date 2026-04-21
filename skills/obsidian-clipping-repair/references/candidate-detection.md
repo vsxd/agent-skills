@@ -9,6 +9,8 @@ Use this file when deciding which Markdown notes in an Obsidian vault are safe t
 - Frontmatter includes a `source`, `url`, `link`, or similar field, but the body is still thin.
 - The filename looks auto-generated, truncated, or disconnected from the actual article title.
 - There is still a recoverable source hint: a source field, a URL in the note body, or a clipper-specific "read original" style link.
+- The note still contains clipper artifacts such as `Read Original`, `Read on ...`, `Highlights`, or quote-heavy highlight exports.
+- The note looks mechanically incomplete: abrupt ending, teaser-only body, or title plus very small metadata.
 
 ## Exclusions
 
@@ -33,11 +35,19 @@ The scanner ranks notes using portable heuristics:
 - short bodies
 - URL-dominant content
 - frontmatter source fields
+- clipper-export markers and highlight structure
+- possible truncation or title-fragment patterns
 - title-only or preview-like bodies
 
 Review high-scoring candidates before editing them.
 
-Notes with no recoverable source hint should usually be skipped even if they are short. A short note without a source URL is often just a concise note, not a broken clipping.
+Notes with no explicit source hint can still appear as `review` candidates if they strongly resemble broken clipper output, but they should be handled more cautiously than notes with a clear original URL.
+
+## Confidence Bands
+
+- `high`: strong repair candidate, usually with explicit source links or clipper-export markers
+- `medium`: likely clipping artifact, but may need source recovery or manual confirmation
+- `review`: worth eyeballing during vault triage, but not strong enough to auto-treat as a primary repair target
 
 ## Practical Rule
 
