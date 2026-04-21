@@ -23,6 +23,7 @@ IGNORE_DIRS = {
 }
 CLIPPING_DIR_HINTS = {"clippings", "clipping", "clips", "webclips", "clipper"}
 SOURCE_FIELDS = {"source", "url", "link", "href", "canonical_url", "original_url"}
+HEALTHY_METADATA_FIELDS = {"author", "published", "description", "site_name", "domain", "created"}
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -65,6 +66,8 @@ def score_note(path: Path, text: str) -> dict[str, object]:
     fields, body = split_frontmatter(text)
     lines = nonempty_lines(body)
     urls = URL_RE.findall(body)
+    source_hints = [fields[key] for key in SOURCE_FIELDS if key in fields]
+    healthy_metadata_count = sum(1 for key in HEALTHY_METADATA_FIELDS if key in fields)
     score = 0
     reasons: list[str] = []
 
@@ -73,7 +76,7 @@ def score_note(path: Path, text: str) -> dict[str, object]:
         score += 20
         reasons.append("clipping-like folder")
 
-    if any(key in fields for key in SOURCE_FIELDS):
+    if source_hints:
         score += 12
         reasons.append("source field in frontmatter")
 
@@ -101,6 +104,18 @@ def score_note(path: Path, text: str) -> dict[str, object]:
         score += 10
         reasons.append("title-plus-link shape")
 
+    if not source_hints and not urls:
+        score -= 26
+        reasons.append("no recoverable source hint")
+
+    if len(body.strip()) >= 1200 and len(lines) >= 8:
+        score -= 12
+        reasons.append("body already meaningful")
+
+    if healthy_metadata_count >= 2 and len(body.strip()) >= 1500:
+        score -= 20
+        reasons.append("note already looks complete")
+
     if len(lines) >= 20:
         score -= 14
         reasons.append("longer body, likely intentional note")
@@ -111,7 +126,7 @@ def score_note(path: Path, text: str) -> dict[str, object]:
 
     candidate = score >= 35
     title_guess = fields.get("title") or path.stem
-    source_url = next((fields[key] for key in SOURCE_FIELDS if key in fields), urls[0] if urls else "")
+    source_url = source_hints[0] if source_hints else (urls[0] if urls else "")
 
     return {
         "path": str(path),

@@ -8,6 +8,7 @@ Use this file when deciding which Markdown notes in an Obsidian vault are safe t
 - The body is mostly a single URL, Markdown link, preview card, or one short teaser paragraph.
 - Frontmatter includes a `source`, `url`, `link`, or similar field, but the body is still thin.
 - The filename looks auto-generated, truncated, or disconnected from the actual article title.
+- There is still a recoverable source hint: a source field, a URL in the note body, or a clipper-specific "read original" style link.
 
 ## Exclusions
 
@@ -35,6 +36,8 @@ The scanner ranks notes using portable heuristics:
 - title-only or preview-like bodies
 
 Review high-scoring candidates before editing them.
+
+Notes with no recoverable source hint should usually be skipped even if they are short. A short note without a source URL is often just a concise note, not a broken clipping.
 
 ## Practical Rule
 
