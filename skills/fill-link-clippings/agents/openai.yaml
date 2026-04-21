@@ -1,7 +1,0 @@
-interface:
-  display_name: "Fill Link Clippings"
-  short_description: "Repair link-only Markdown clipping notes."
-  default_prompt: "Use $fill-link-clippings to repair link-only clipping notes in this repo or vault."
-
-policy:
-  allow_implicit_invocation: true

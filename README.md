@@ -15,7 +15,7 @@ npx skills add vsxd/agent-skills
 Install a specific skill:
 
 ```bash
-npx skills add vsxd/agent-skills --skill fill-link-clippings
+npx skills add vsxd/agent-skills --skill obsidian-clipping-repair
 ```
 
 List the skills in this repo:
@@ -28,7 +28,7 @@ npx skills add vsxd/agent-skills --list
 
 | Skill | Description |
 | --- | --- |
-| [`fill-link-clippings`](./skills/fill-link-clippings) | Repairs Markdown or Obsidian clipping notes that captured only a link or thin preview instead of the actual article. |
+| [`obsidian-clipping-repair`](./skills/obsidian-clipping-repair) | Repairs and enriches Obsidian clipping notes imported from browsers or mobile clipping flows when the saved Markdown is thin, broken, or incomplete. |
 
 ## Repository Layout
 
@@ -36,10 +36,11 @@ npx skills add vsxd/agent-skills --list
 .
 ├── .github/workflows/validate.yml
 ├── skills/
-│   └── fill-link-clippings/
+│   └── obsidian-clipping-repair/
 │       ├── SKILL.md
 │       ├── agents/openai.yaml
-│       └── references/
+│       ├── references/
+│       └── scripts/
 └── README.md
 ```
 

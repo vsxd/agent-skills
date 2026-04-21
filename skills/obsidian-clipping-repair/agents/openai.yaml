@@ -1,0 +1,7 @@
+interface:
+  display_name: "Obsidian Clipping Repair"
+  short_description: "Repair thin or broken Obsidian clippings."
+  default_prompt: "Use $obsidian-clipping-repair to repair and normalize broken clipping notes in this vault."
+
+policy:
+  allow_implicit_invocation: true

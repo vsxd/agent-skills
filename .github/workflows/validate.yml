@@ -20,3 +20,6 @@ jobs:
 
       - name: Validate skill discovery
         run: npx skills add . --list
+
+      - name: Validate candidate scanner
+        run: python3 skills/obsidian-clipping-repair/scripts/find_candidates.py . --format json > /tmp/obsidian-clipping-repair-candidates.json
