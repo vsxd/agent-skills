@@ -23,3 +23,6 @@ jobs:
 
       - name: Validate candidate scanner
         run: python3 skills/obsidian-clipping-repair/scripts/find_candidates.py . --format json > /tmp/obsidian-clipping-repair-candidates.json
+
+      - name: Validate tag inventory scanner
+        run: python3 skills/obsidian-vault-auto-tagger/scripts/vault_tag_inventory.py scan . --format json > /tmp/obsidian-vault-auto-tagger-scan.json
