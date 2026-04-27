@@ -1,7 +1,7 @@
 interface:
   display_name: "Obsidian Auto Tagger"
-  short_description: "Auto-tag untagged Obsidian documents using existing tags."
-  default_prompt: "Use $obsidian-auto-tagger to tag untagged documents in this vault."
+  short_description: "Tag Obsidian notes using existing vault tags."
+  default_prompt: "Use $obsidian-auto-tagger to scan this vault for untagged notes and add suitable tags, preferring existing tags."
 
 policy:
   allow_implicit_invocation: true

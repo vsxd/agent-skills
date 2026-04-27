@@ -1,55 +1,45 @@
 # Batch Mode
 
-Guidelines for processing multiple documents in a single tagging session.
+Use this file when tagging many untagged notes across a vault or folder.
 
-## Workflow Sequence
+## Sequence
 
-1. **Scan existing tags** — Run `scan_tags.py` to build tag taxonomy
-2. **Find candidates** — Run `find_untagged.py` to discover untagged documents
-3. **Batch read** — Read candidates in groups of 5-10 documents
-4. **Generate suggestions** — Create tag recommendations for the batch
-5. **Present for review** — Show all suggestions in table format
-6. **Apply after approval** — Write tags only after user confirms
-7. **Report results** — Summarize applied, skipped, and new tags created
+1. Run a full scan and save or inspect the JSON output.
+2. Review the top existing tags before assigning any new tags.
+3. Group untagged notes by folder or topic to keep decisions consistent.
+4. Read 5-10 candidate notes at a time.
+5. Present a suggestion table with file, suggested tags, confidence, and reason.
+6. Create a small assignment JSON for the approved batch.
+7. Run `apply` without `--write` and inspect the dry-run output.
+8. Run `apply --write` only when the dry run is correct.
+9. Rescan after each batch.
 
-## Suggestion Table Format
+## Suggestion Table
 
+```text
+| File | Current Tags | Suggested Tags | Confidence | Reason |
+| --- | --- | --- | --- | --- |
+| Notes/example.md | (none) | ai, engineering | high | Main topic matches existing tags |
+| Notes/strategy.md | (none) | business, strategy (new) | medium | Existing business tag fits; strategy is reusable |
 ```
-| File | Current Tags | Suggested Tags | Reason |
-|------|--------------|----------------|--------|
-| path/to/doc1.md | (none) | ai, engineering | Article about AI agents |
-| path/to/doc2.md | (none) | business (new) | Business strategy piece |
-```
 
-Mark new tags clearly so user can review tag taxonomy expansion.
+Mark new tags as `new`. Do not include low-confidence notes in the assignment JSON; list them as skipped.
 
 ## Safety Rules
 
-- Never write tags without user confirmation
-- Process in small batches (5-10 documents) to allow review
-- Skip ambiguous documents rather than guessing
-- Preserve existing frontmatter structure exactly
-- Create frontmatter block if missing, using vault's standard format
+- Do not tag plugin, cache, local skill, template, attachment, or generated files.
+- Do not overwrite notes that already have tags unless the user explicitly asks for retagging.
+- Never write before a reviewable suggestion list and a clean dry run.
+- Prefer leaving a note untagged over assigning misleading tags.
+- Stop on path mismatches, missing files, or frontmatter parse surprises.
 
-## Error Handling
+## Good Final Summary
 
-- File read errors: skip and report
-- Frontmatter parse errors: skip and report
-- Low confidence: skip and report
-- User rejects suggestion: skip that document
+Report:
 
-## Reporting
-
-Final report should include:
-- Total candidates found
-- Tags applied (count)
-- New tags created (list them)
-- Skipped documents (count and reasons)
-- Any errors encountered
-
-## Optimization Mode
-
-When processing documents with existing tags:
-- Append suggested tags to existing ones
-- Never remove existing tags
-- Mark as "optimization" in suggestions
+- number of notes scanned
+- number of tagged notes before and after
+- tags reused most often
+- new tags introduced, if any
+- skipped notes and why they were skipped
+- verification command and result

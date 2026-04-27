@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Any
 
 
-FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
-FIELD_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*?)\s*$")
+# Accept a UTF-8 BOM, CRLF, and accidental leading blank lines before the
+# frontmatter fence while still requiring the fence near the top of the file.
+FRONTMATTER_RE = re.compile(
+    r"\A(?P<prefix>\ufeff?(?:[ \t]*\r?\n)*)(?P<open>---[ \t]*)(?P<newline>\r?\n)"
+    r"(?P<frontmatter>.*?)(?P<close_newline>\r?\n)---[ \t]*(?:\r?\n|$)",
+    re.DOTALL,
+)
+FIELD_RE = re.compile(r"^([A-Za-z0-9_-]+)\s*:\s*(.*?)\s*$")
 INLINE_TAG_RE = re.compile(r"(?<![\w/@])#([A-Za-z0-9_\-/\u4e00-\u9fff]+)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 WIKI_LINK_RE = re.compile(r"!?(?:\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\])")
@@ -29,6 +35,8 @@ IGNORE_DIRS = {
     "__pycache__",
     "attachments",
     "assets",
+    "templates",
+    "Templates",
 }
 STOP_WORDS = {
     "about",
@@ -63,11 +71,29 @@ def split_frontmatter(text: str) -> tuple[list[str], str, re.Match[str] | None]:
     match = FRONTMATTER_RE.match(text)
     if not match:
         return [], text, None
-    return match.group(1).splitlines(), text[match.end() :], match
+    return match.group("frontmatter").splitlines(), text[match.end() :], match
+
+
+def strip_inline_comment(value: str) -> str:
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char in {"'", '"'}:
+            quote = None if quote == char else char if quote is None else quote
+            continue
+        if char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value
 
 
 def parse_inline_list(value: str) -> list[str]:
-    value = value.strip()
+    value = strip_inline_comment(value).strip()
     if not value:
         return []
     if value.startswith("[") and value.endswith("]"):
@@ -98,7 +124,7 @@ def frontmatter_tags(lines: list[str]) -> list[str]:
                 break
             stripped = child.strip()
             if stripped.startswith("-"):
-                tag = normalize_tag(stripped[1:].strip())
+                tag = normalize_tag(strip_inline_comment(stripped[1:].strip()))
                 if tag:
                     tags.append(tag)
             index += 1
@@ -106,6 +132,8 @@ def frontmatter_tags(lines: list[str]) -> list[str]:
 
 
 def inline_tags(body: str) -> list[str]:
+    body = re.sub(r"```.*?```", " ", body, flags=re.DOTALL)
+    body = URL_RE.sub(" ", body)
     tags = []
     for match in INLINE_TAG_RE.finditer(body):
         tag = normalize_tag(match.group(1))
@@ -161,7 +189,21 @@ def should_skip(path: Path) -> bool:
     return any(part in IGNORE_DIRS for part in path.parts)
 
 
-def iter_markdown_files(root: Path, include_dirs: list[str]) -> list[Path]:
+def is_under_excluded_dir(path: Path, exclude_dirs: list[str]) -> bool:
+    if not exclude_dirs:
+        return False
+    path_parts = path.parts
+    for exclude_dir in exclude_dirs:
+        exclude_parts = Path(exclude_dir).parts
+        if not exclude_parts:
+            continue
+        for index in range(0, len(path_parts) - len(exclude_parts) + 1):
+            if path_parts[index : index + len(exclude_parts)] == exclude_parts:
+                return True
+    return False
+
+
+def iter_markdown_files(root: Path, include_dirs: list[str], exclude_dirs: list[str]) -> list[Path]:
     search_roots = [root / rel for rel in include_dirs] if include_dirs else [root]
     files: list[Path] = []
     for search_root in search_roots:
@@ -170,6 +212,8 @@ def iter_markdown_files(root: Path, include_dirs: list[str]) -> list[Path]:
         for path in search_root.rglob("*.md"):
             rel = path.relative_to(root)
             if should_skip(rel):
+                continue
+            if is_under_excluded_dir(rel, exclude_dirs):
                 continue
             files.append(path)
     return sorted(set(files))
@@ -184,31 +228,57 @@ def read_note(path: Path) -> str:
 
 def note_record(root: Path, path: Path) -> dict[str, Any]:
     text = read_note(path)
-    frontmatter, body, _ = split_frontmatter(text)
-    tags = sorted(set(frontmatter_tags(frontmatter) + inline_tags(body)))
+    frontmatter, body, match = split_frontmatter(text)
+    fm_tags = frontmatter_tags(frontmatter)
+    body_tags = inline_tags(body)
+    tags = sorted(set(fm_tags + body_tags))
     rel = path.relative_to(root)
     title = extract_title(rel, frontmatter, body)
+    if fm_tags and body_tags:
+        source = "frontmatter+inline"
+    elif fm_tags:
+        source = "frontmatter"
+    elif body_tags:
+        source = "inline"
+    else:
+        source = "none"
+    if tags:
+        status = "tagged"
+    elif not match:
+        status = "no-frontmatter"
+    elif not frontmatter_has_tags(frontmatter):
+        status = "no-tags-field"
+    else:
+        status = "empty-tags"
     return {
         "path": str(rel),
         "title": title,
         "tags": tags,
         "has_tags": bool(tags),
+        "tag_source": source,
+        "tag_status": status,
         "excerpt": excerpt(body),
         "candidate_terms": candidate_terms(rel, title, body),
     }
 
 
-def scan_vault(root: Path, include_dirs: list[str], top_untagged: int) -> dict[str, Any]:
-    notes = [note_record(root, path) for path in iter_markdown_files(root, include_dirs)]
+def scan_vault(root: Path, include_dirs: list[str], exclude_dirs: list[str], top_untagged: int) -> dict[str, Any]:
+    notes = [
+        note_record(root, path)
+        for path in iter_markdown_files(root, include_dirs, exclude_dirs)
+    ]
     tag_counts: Counter[str] = Counter(tag for note in notes for tag in note["tags"])
     untagged = [note for note in notes if not note["has_tags"]]
+    untagged_total = len(untagged)
     if top_untagged >= 0:
         untagged = untagged[:top_untagged]
     return {
         "root": str(root),
         "total_notes": len(notes),
         "tagged_notes": sum(1 for note in notes if note["has_tags"]),
-        "untagged_notes": sum(1 for note in notes if not note["has_tags"]),
+        "untagged_notes": untagged_total,
+        "untagged_returned": len(untagged),
+        "untagged_limit": top_untagged,
         "existing_tags": [
             {"tag": tag, "count": count} for tag, count in tag_counts.most_common()
         ],
@@ -248,6 +318,7 @@ def frontmatter_has_tags(lines: list[str]) -> bool:
 
 def replace_or_add_tags(text: str, tags: list[str]) -> str:
     frontmatter, body, match = split_frontmatter(text)
+    newline = "\r\n" if match and match.group("newline") == "\r\n" else "\n"
     tag_block = render_tags_block(tags)
     if match:
         output: list[str] = []
@@ -271,7 +342,8 @@ def replace_or_add_tags(text: str, tags: list[str]) -> str:
         if not replaced:
             insert_at = 1 if output and FIELD_RE.match(output[0]) and FIELD_RE.match(output[0]).group(1).lower() == "title" else len(output)
             output[insert_at:insert_at] = tag_block
-        return "---\n" + "\n".join(output).rstrip() + "\n---\n" + body
+        prefix = match.group("prefix")
+        return prefix + "---" + newline + newline.join(output).rstrip() + newline + "---" + newline + body
 
     return "---\n" + "\n".join(tag_block) + "\n---\n" + text
 
@@ -312,10 +384,15 @@ def print_text_scan(result: dict[str, Any]) -> None:
     print("\nTop existing tags:")
     for item in result["existing_tags"][:30]:
         print(f"  {item['tag']}: {item['count']}")
-    print("\nUntagged notes:")
+    limit = result["untagged_limit"]
+    if limit >= 0 and result["untagged_returned"] < result["untagged_notes"]:
+        print(f"\nUntagged notes: showing {result['untagged_returned']} of {result['untagged_notes']} (use --top-untagged -1 for all)")
+    else:
+        print("\nUntagged notes:")
     for note in result["untagged"]:
         print(f"- {note['path']}")
         print(f"  title: {note['title']}")
+        print(f"  reason: {note['tag_status']}")
         if note["candidate_terms"]:
             print(f"  terms: {', '.join(note['candidate_terms'][:10])}")
         if note["excerpt"]:
@@ -329,7 +406,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subparsers.add_parser("scan", help="Inventory existing tags and untagged notes.")
     scan.add_argument("root", help="Vault root or folder to scan.")
     scan.add_argument("--include-dir", action="append", default=[], help="Relative folder under root to scan. May be repeated.")
-    scan.add_argument("--top-untagged", type=int, default=50, help="Maximum untagged notes to print. Use -1 for all.")
+    scan.add_argument("--exclude-dir", action="append", default=[], help="Relative folder under root to exclude. May be repeated.")
+    scan.add_argument("--top-untagged", type=int, default=-1, help="Maximum untagged notes to print. Use -1 for all.")
     scan.add_argument("--format", choices=("text", "json"), default="text", help="Output format.")
 
     apply = subparsers.add_parser("apply", help="Apply tag assignments from JSON.")
@@ -345,9 +423,11 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     root = Path(args.root).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        parser.error(f"{root} is not an existing directory")
 
     if args.command == "scan":
-        result = scan_vault(root, args.include_dir, args.top_untagged)
+        result = scan_vault(root, args.include_dir, args.exclude_dir, args.top_untagged)
         if args.format == "json":
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:

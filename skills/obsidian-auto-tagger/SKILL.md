@@ -1,8 +1,8 @@
 ---
 name: obsidian-auto-tagger
-description: Automatically tag untagged Obsidian vault documents using existing tag taxonomy. Agent reads document content, selects 1-2 tags from vault's existing tags, and only creates new tags when no existing tag fits. Batch suggestion workflow with user review before applying changes.
+description: Add suitable tags to untagged Markdown notes in an Obsidian vault. Use when a vault, folder, or note should be audited for missing tags, existing vault tags should be inventoried first, recommendations should be reviewed in batches, and new tags should be introduced only when no existing tag fits.
 license: MIT
-compatibility: Best in agents that can read local Markdown files, execute Python scripts, and edit Obsidian vault frontmatter.
+compatibility: Best in agents that can read and edit local Markdown files inside an Obsidian-compatible vault.
 metadata:
   author: vsxd
   version: "1.0.0"
@@ -10,92 +10,83 @@ metadata:
 
 # Obsidian Auto Tagger
 
-Automatically tag untagged documents in an Obsidian vault using the vault's existing tag taxonomy.
+Add useful tags to untagged Obsidian notes while preserving the vault's existing tag vocabulary.
 
 ## Use This Skill When
 
-- User points at an Obsidian vault and asks to tag documents
-- User specifies a folder or single document needing tags
-- Documents lack frontmatter, have no `tags` field, or have empty tags
+- The user points at an Obsidian vault, folder, or note and asks to add missing tags.
+- Notes lack frontmatter, lack a `tags` field, have an empty `tags` field, or have no inline tags.
+- Existing vault tags should be reused before creating new tags.
+- Tags should be written as Obsidian-compatible frontmatter `tags` entries.
 
 ## Do Not Use
 
-- Documents already have well-maintained tags and user hasn't requested optimization
-- Non-Markdown files (Excalidraw scripts, attachments, etc.)
+- The user wants to redesign the entire taxonomy from scratch.
+- Notes are generated, cache, plugin, template, attachment, or local skill files.
+- Existing tags are already maintained and the user has not requested optimization.
+- The note topic is too ambiguous to tag confidently.
 
 ## Workflow
 
-### 1. Determine Scope
+1. Determine scope.
+   For a single note, read it directly and still inspect nearby vault tags when possible. For a folder or vault, run the bundled scanner first. Run commands from this skill directory or replace `scripts/...` with the script's absolute path. The script uses Python 3 standard library only.
 
-Single document → process directly. Vault/folder → scan for candidates first.
+   ```bash
+   python3 scripts/vault_tag_inventory.py scan /path/to/vault --format json
+   ```
 
-### 2. Scan Existing Tag Taxonomy
+2. Inventory the existing taxonomy before assigning tags.
+   Prefer high-frequency, semantically matching tags already present in the vault. Use [references/tag-selection.md](references/tag-selection.md).
 
-```bash
-python3 skills/obsidian-auto-tagger/scripts/scan_tags.py /path/to/vault --format json
+3. Read candidates and recommend tags in small batches.
+   For each untagged note, read the title, frontmatter, headings, and meaningful body text. Choose 1-3 tags from the existing list when possible; use 4 only for notes with distinct retrieval paths. Mark any proposed new tag as `new` in the recommendation.
+
+4. Present a reviewable suggestion list before editing.
+
+   ```text
+   | File | Suggested Tags | Confidence | Reason |
+   | --- | --- | --- | --- |
+   | Notes/example.md | ai, research | high | Matches existing tags and note topic |
+   ```
+
+5. Dry-run writes first.
+   Put approved assignments in JSON and validate the exact files that would change:
+
+   ```bash
+   python3 scripts/vault_tag_inventory.py apply /path/to/vault assignments.json
+   ```
+
+6. Apply only after the dry run is clean.
+
+   ```bash
+   python3 scripts/vault_tag_inventory.py apply /path/to/vault assignments.json --write
+   ```
+
+7. Rescan and summarize.
+   Confirm fewer untagged notes remain and report reused tags, new tags, skipped notes, and any ambiguous cases. Use [references/batch-mode.md](references/batch-mode.md).
+
+## Assignment Format
+
+```json
+{
+  "assignments": [
+    {"path": "Notes/example.md", "tags": ["ai", "research"]}
+  ]
+}
 ```
 
-Build the tag vocabulary. Prefer existing tags over creating new ones.
-
-### 3. Discover Untagged Candidates
-
-```bash
-python3 skills/obsidian-auto-tagger/scripts/find_untagged.py /path/to/vault --format json
-```
-
-Identifies: no frontmatter, no `tags` field, or empty `tags` field.
-
-Optional: `--include-folder Clippings` to scan specific folders only.
-
-### 4. Read and Recommend Tags
-
-For each candidate, read title, frontmatter, and body. Select 1-2 tags from existing list. Only propose new tags (marked "new") when no existing tag fits.
-
-See [references/tagging-guidelines.md](references/tagging-guidelines.md).
-
-### 5. Present Suggestion List
-
-```
-| File | Suggested Tags | Reason |
-|------|----------------|--------|
-| ... | ... | ... |
-```
-
-Wait for user approval before writing any changes.
-
-### 6. Apply Changes
-
-After confirmation, write tags into frontmatter:
-- No frontmatter → create frontmatter block with tags
-- No tags field → add tags field to existing frontmatter
-- Preserve all other frontmatter fields unchanged
-
-### 7. Verify and Report
-
-Report tags applied, new tags created, and skipped documents with reasons.
-
-See [references/batch-mode.md](references/batch-mode.md).
-
-## Scripts
-
-```bash
-# Collect existing tag taxonomy
-python3 skills/obsidian-auto-tagger/scripts/scan_tags.py <vault> [--include-inline] [--format json|text]
-
-# Find documents without tags
-python3 skills/obsidian-auto-tagger/scripts/find_untagged.py <vault> [--include-folder DIR] [--exclude-folder DIR] [--format json|text]
-```
+Paths are relative to the vault root. The apply command is dry-run by default and skips files that already have frontmatter or inline tags unless `--force` is provided.
 
 ## Ground Rules
 
-- Prefer existing tags over new ones — always
-- Never overwrite existing user-authored tags
-- Never modify document body content
-- Always present suggestions before applying
-- Target 1-2 tags per document, max 3
-- If confidence is low, skip and report why
+- Preserve existing frontmatter and note content.
+- Prefer existing tags over new tags.
+- Never remove existing user-authored tags.
+- Use concise, reusable tags rather than one-off sentence-like tags.
+- Do not infer sensitive or private attributes from personal notes.
+- Skip low-confidence notes instead of inventing misleading tags.
 
 ## Reference Files
 
-- [references/tagging-guidelines.md](references/tagging-guidelines.md): tag selection rules, style, confidence levels
-- [references/batch-mode.md](references/batch-mode.md): batch workflow, safety rules, reporting
+- [references/tag-selection.md](references/tag-selection.md): tag reuse, new-tag criteria, and note-reading heuristics.
+- [references/batch-mode.md](references/batch-mode.md): vault-scale sequencing, dry-run checks, and final reporting.

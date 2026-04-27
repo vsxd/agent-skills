@@ -16,7 +16,7 @@ Install a specific skill:
 
 ```bash
 npx skills add vsxd/agent-skills --skill obsidian-clipping-repair
-npx skills add vsxd/agent-skills --skill obsidian-vault-auto-tagger
+npx skills add vsxd/agent-skills --skill obsidian-auto-tagger
 ```
 
 List the skills in this repo:
@@ -30,7 +30,7 @@ npx skills add vsxd/agent-skills --list
 | Skill | Description |
 | --- | --- |
 | [`obsidian-clipping-repair`](./skills/obsidian-clipping-repair) | Repairs and enriches Obsidian clipping notes imported from browsers or mobile clipping flows when the saved Markdown is thin, broken, or incomplete. |
-| [`obsidian-vault-auto-tagger`](./skills/obsidian-vault-auto-tagger) | Adds suitable tags to untagged Obsidian notes by inventorying the vault's existing tag vocabulary first and preferring those tags before introducing new ones. |
+| [`obsidian-auto-tagger`](./skills/obsidian-auto-tagger) | Adds suitable tags to untagged Obsidian notes by inventorying the vault's existing tag vocabulary first, presenting reviewable batch suggestions, and preferring existing tags before introducing new ones. |
 
 ## Repository Layout
 
@@ -43,7 +43,7 @@ npx skills add vsxd/agent-skills --list
 │   │   ├── agents/openai.yaml
 │   │   ├── references/
 │   │   └── scripts/
-│   └── obsidian-vault-auto-tagger/
+│   └── obsidian-auto-tagger/
 │       ├── SKILL.md
 │       ├── agents/openai.yaml
 │       ├── references/
