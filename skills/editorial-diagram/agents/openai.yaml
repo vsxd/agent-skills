@@ -1,0 +1,7 @@
+interface:
+  display_name: "Editorial Diagram"
+  short_description: "Create warm editable draw.io diagrams."
+  default_prompt: "Use $editorial-diagram to turn this process, architecture, or comparison into an editable .drawio diagram."
+
+policy:
+  allow_implicit_invocation: true
